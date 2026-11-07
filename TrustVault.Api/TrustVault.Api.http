@@ -1,0 +1,28 @@
+### Register
+POST http://localhost:5270/api/Auth/register
+Content-Type: application/json
+
+{
+  "fullName": "Test User",
+  "email": "testuser@example.com",
+  "password": "Test@12345"
+}
+
+###
+
+### Login
+POST http://localhost:5270/api/Auth/login
+Content-Type: application/json
+
+{
+  "email": "testuser@example.com",
+  "password": "Test@12345"
+}
+
+###
+
+### Get Documents (Authenticated)
+@token = PASTE_FRESH_LOGIN_TOKEN_HERE
+
+GET http://localhost:5270/api/Documents
+Authorization: Bearer {{token}}

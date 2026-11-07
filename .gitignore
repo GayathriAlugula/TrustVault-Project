@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+*.db
+*.db-shm
+*.db-wal
+**/Uploads/
+**/Data/documents.json
+**/appsettings.Development.json
+*.zip
+TrustVault.Api/sample.pdf
+TrustVault.Api/Models/data
