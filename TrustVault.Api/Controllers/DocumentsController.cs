@@ -2,6 +2,7 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using TrustVault.Api.Models;
 
@@ -14,14 +15,18 @@ public class DocumentsController : ControllerBase
 {
     private readonly string _uploadPath;
     private readonly string _dataPath;
+    private readonly UserManager<AppUser> _userManager;
 
     private static readonly SemaphoreSlim FileLock = new(1, 1);
 
     private static readonly JsonSerializerOptions JsonOptions =
         new(JsonSerializerDefaults.Web);
 
-    public DocumentsController(IWebHostEnvironment environment)
+    public DocumentsController(
+        IWebHostEnvironment environment,
+        UserManager<AppUser> userManager)
     {
+        _userManager = userManager;
         _uploadPath = Path.Combine(environment.ContentRootPath, "Uploads");
         _dataPath = Path.Combine(environment.ContentRootPath, "Data", "documents.json");
 
@@ -47,6 +52,25 @@ public class DocumentsController : ControllerBase
     {
         var json = JsonSerializer.Serialize(documents, JsonOptions);
         await System.IO.File.WriteAllTextAsync(_dataPath, json);
+    }
+
+    private object MapDocument(Document d, string userId)
+    {
+        var isOwner = d.OwnerId == userId;
+
+        return new
+        {
+            d.Id,
+            d.FileName,
+            d.FileSize,
+            d.UploadedAt,
+            d.OwnerId,
+            IsOwner = isOwner,
+            Permission = isOwner
+                ? "Owner"
+                : d.SharedWith?.FirstOrDefault(s => s.UserId == userId)?.Permission,
+            SharedWith = isOwner ? d.SharedWith : null
+        };
     }
 
     [HttpPost("upload")]
@@ -132,6 +156,7 @@ public class DocumentsController : ControllerBase
     public async Task<IActionResult> GetDocuments()
     {
         var userId = CurrentUserId;
+
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -140,7 +165,12 @@ public class DocumentsController : ControllerBase
         {
             var documents = await ReadDocumentsAsync();
 
-            return Ok(documents.Where(d => d.OwnerId == userId));
+            var results = documents
+                .Where(d => d.OwnerId == userId ||
+                    (d.SharedWith?.Any(s => s.UserId == userId) ?? false))
+                .Select(d => MapDocument(d, userId));
+
+            return Ok(results);
         }
         finally
         {
@@ -152,6 +182,7 @@ public class DocumentsController : ControllerBase
     public async Task<IActionResult> SearchDocuments([FromQuery] string query)
     {
         var userId = CurrentUserId;
+
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -160,12 +191,133 @@ public class DocumentsController : ControllerBase
         {
             var documents = await ReadDocumentsAsync();
 
-            var results = documents.Where(d =>
-                d.OwnerId == userId &&
-                d.FileName.Contains(
-                    query ?? "", StringComparison.OrdinalIgnoreCase));
+            var results = documents
+                .Where(d =>
+                    (d.OwnerId == userId ||
+                     (d.SharedWith?.Any(s => s.UserId == userId) ?? false)) &&
+                    d.FileName.Contains(
+                        query ?? "", StringComparison.OrdinalIgnoreCase))
+                .Select(d => MapDocument(d, userId));
 
             return Ok(results);
+        }
+        finally
+        {
+            FileLock.Release();
+        }
+    }
+
+    [HttpPost("{id:guid}/share")]
+    public async Task<IActionResult> ShareDocument(
+        Guid id,
+        [FromBody] ShareDocumentRequest request)
+    {
+        var ownerId = CurrentUserId;
+
+        if (string.IsNullOrEmpty(ownerId))
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Email))
+            return BadRequest("Email is required.");
+
+        var permission = request.Permission?.Trim();
+
+        if (permission == null ||
+            (!permission.Equals("Read", StringComparison.OrdinalIgnoreCase) &&
+             !permission.Equals("Edit", StringComparison.OrdinalIgnoreCase)))
+            return BadRequest("Permission must be Read or Edit.");
+
+        var targetUser = await _userManager.FindByEmailAsync(request.Email.Trim());
+
+        if (targetUser == null)
+            return NotFound("User with this email was not found.");
+
+        if (targetUser.Id == ownerId)
+            return BadRequest("You cannot share a document with yourself.");
+
+        await FileLock.WaitAsync();
+        try
+        {
+            var documents = await ReadDocumentsAsync();
+
+            var document = documents.FirstOrDefault(d =>
+                d.Id == id && d.OwnerId == ownerId);
+
+            if (document == null)
+                return NotFound("Document not found or you are not the owner.");
+
+            document.SharedWith ??= new List<DocumentShare>();
+
+            var existingShare = document.SharedWith.FirstOrDefault(
+                s => s.UserId == targetUser.Id);
+
+            if (existingShare == null)
+            {
+                document.SharedWith.Add(new DocumentShare
+                {
+                    UserId = targetUser.Id,
+                    Email = targetUser.Email ?? request.Email.Trim(),
+                    Permission = permission.Equals(
+                        "Edit", StringComparison.OrdinalIgnoreCase)
+                        ? "Edit"
+                        : "Read"
+                });
+            }
+            else
+            {
+                existingShare.Permission = permission.Equals(
+                    "Edit", StringComparison.OrdinalIgnoreCase)
+                    ? "Edit"
+                    : "Read";
+            }
+
+            await SaveDocumentsAsync(documents);
+
+            return Ok(new
+            {
+                message = "Document shared successfully.",
+                email = targetUser.Email,
+                permission = permission
+            });
+        }
+        finally
+        {
+            FileLock.Release();
+        }
+    }
+
+    [HttpDelete("{id:guid}/share/{sharedUserId}")]
+    public async Task<IActionResult> RevokeShare(
+        Guid id,
+        string sharedUserId)
+    {
+        var ownerId = CurrentUserId;
+
+        if (string.IsNullOrEmpty(ownerId))
+            return Unauthorized();
+
+        await FileLock.WaitAsync();
+        try
+        {
+            var documents = await ReadDocumentsAsync();
+
+            var document = documents.FirstOrDefault(d =>
+                d.Id == id && d.OwnerId == ownerId);
+
+            if (document == null)
+                return NotFound("Document not found or you are not the owner.");
+
+            var share = document.SharedWith?.FirstOrDefault(
+                s => s.UserId == sharedUserId);
+
+            if (share == null)
+                return NotFound("Share not found.");
+
+            document.SharedWith!.Remove(share);
+
+            await SaveDocumentsAsync(documents);
+
+            return Ok(new { message = "Access revoked successfully." });
         }
         finally
         {
@@ -178,6 +330,7 @@ public class DocumentsController : ControllerBase
     public async Task<IActionResult> DownloadDocument(Guid id)
     {
         var userId = CurrentUserId;
+
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -187,8 +340,13 @@ public class DocumentsController : ControllerBase
         try
         {
             var documents = await ReadDocumentsAsync();
+
             document = documents.FirstOrDefault(d =>
-                d.Id == id && d.OwnerId == userId);
+                d.Id == id &&
+                (d.OwnerId == userId ||
+                 (d.SharedWith?.Any(s =>
+                     s.UserId == userId &&
+                     (s.Permission == "Read" || s.Permission == "Edit")) ?? false)));
         }
         finally
         {
@@ -196,7 +354,7 @@ public class DocumentsController : ControllerBase
         }
 
         if (document == null)
-            return NotFound("Document not found.");
+            return NotFound("Document not found or access denied.");
 
         var path = Path.Combine(_uploadPath, document.StoredFileName);
 
@@ -210,6 +368,7 @@ public class DocumentsController : ControllerBase
     public async Task<IActionResult> DeleteDocument(Guid id)
     {
         var userId = CurrentUserId;
+
         if (string.IsNullOrEmpty(userId))
             return Unauthorized();
 
@@ -239,4 +398,10 @@ public class DocumentsController : ControllerBase
             FileLock.Release();
         }
     }
+}
+
+public class ShareDocumentRequest
+{
+    public string Email { get; set; } = "";
+    public string Permission { get; set; } = "Read";
 }

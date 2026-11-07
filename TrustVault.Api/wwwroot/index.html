@@ -5,218 +5,547 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>TrustVault | Secure Documents</title>
+
 <style>
 *{box-sizing:border-box}
-body{margin:0;font-family:Arial,sans-serif;background:#f1f5f9;color:#172033}
-header{background:#172554;color:white;padding:22px 7%;display:flex;justify-content:space-between;align-items:center}
-header h1{margin:0;font-size:25px}
-main{max-width:1000px;margin:35px auto;padding:0 18px}
-.card{background:white;padding:24px;border-radius:12px;margin-bottom:20px;box-shadow:0 3px 15px #0001}
-input{padding:12px;margin:7px 0;width:100%;border:1px solid #cbd5e1;border-radius:6px}
-button{padding:11px 17px;background:#2563eb;color:white;border:0;border-radius:6px;cursor:pointer;margin:5px}
+
+body{
+ margin:0;
+ font-family:Arial,sans-serif;
+ background:#f1f5f9;
+ color:#172033;
+}
+
+header{
+ background:#172554;
+ color:white;
+ padding:22px 7%;
+ display:flex;
+ justify-content:space-between;
+ align-items:center;
+}
+
+header h1{
+ margin:0;
+ font-size:25px;
+}
+
+main{
+ max-width:1000px;
+ margin:35px auto;
+ padding:0 18px;
+}
+
+.card{
+ background:white;
+ padding:24px;
+ border-radius:12px;
+ margin-bottom:20px;
+ box-shadow:0 3px 15px #0001;
+}
+
+input{
+ padding:12px;
+ margin:7px 0;
+ width:100%;
+ border:1px solid #cbd5e1;
+ border-radius:6px;
+}
+
+button{
+ padding:11px 17px;
+ background:#2563eb;
+ color:white;
+ border:0;
+ border-radius:6px;
+ cursor:pointer;
+ margin:5px;
+}
+
 button:hover{background:#1d4ed8}
 .secondary{background:#475569}
 .danger{background:#dc2626}
 .hidden{display:none}
-#message{padding:12px;margin:10px 0;border-radius:6px}
-.doc{border-bottom:1px solid #ddd;padding:14px 0;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+
+#message{
+ padding:12px;
+ margin:10px 0;
+ border-radius:6px;
+}
+
+.doc{
+ border-bottom:1px solid #ddd;
+ padding:14px 0;
+ display:flex;
+ justify-content:space-between;
+ gap:10px;
+ align-items:center;
+ flex-wrap:wrap;
+}
+
 small{color:#64748b}
 </style>
 </head>
+
 <body>
+
 <header>
-<h1>🔐 TrustVault</h1>
-<span>Secure Document Sharing</span>
+ <h1>🔐 TrustVault</h1>
+ <span>Secure Document Sharing</span>
 </header>
+
 <main>
+
 <div id="message" class="hidden"></div>
 
 <section id="auth">
-<div class="card">
-<h2>Welcome to TrustVault</h2>
-<p>Register or login to manage your documents.</p>
-<input id="name" placeholder="Full Name (for registration)">
-<input id="email" type="email" placeholder="Email">
-<input id="password" type="password" placeholder="Password">
-<button onclick="register()">Register</button>
-<button onclick="login()">Login</button>
-</div>
+
+ <div class="card">
+  <h2>Welcome to TrustVault</h2>
+  <p>Register or login to manage your documents.</p>
+
+  <input id="name" placeholder="Full Name (for registration)">
+
+  <input id="email" type="email" placeholder="Email">
+
+  <input id="password" type="password" placeholder="Password">
+
+  <button onclick="register()">Register</button>
+  <button onclick="login()">Login</button>
+ </div>
+
 </section>
 
 <section id="dashboard" class="hidden">
-<div class="card">
-<h2>My Documents</h2>
-<p>Upload a PDF document (maximum 10 MB).</p>
-<input id="pdf" type="file" accept=".pdf,application/pdf">
-<button onclick="upload()">Upload PDF</button>
-<button class="secondary" onclick="loadDocuments()">Refresh</button>
-<button class="danger" onclick="logout()">Logout</button>
-</div>
 
-<div class="card">
-<h2>Search Documents</h2>
-<input id="search" placeholder="Search by file name">
-<button onclick="searchDocuments()">Search</button>
-<button class="secondary" onclick="loadDocuments()">Show All</button>
-<div id="documents"></div>
-</div>
+ <div class="card">
+  <h2>My Documents</h2>
+
+  <p>Upload a PDF document (maximum 10 MB).</p>
+
+  <input id="pdf" type="file" accept=".pdf,application/pdf">
+
+  <button onclick="upload()">Upload PDF</button>
+
+  <button class="secondary" onclick="loadDocuments()">Refresh</button>
+
+  <button class="danger" onclick="logout()">Logout</button>
+ </div>
+
+ <div class="card">
+  <h2>Search Documents</h2>
+
+  <input id="search" placeholder="Search by file name">
+
+  <button onclick="searchDocuments()">Search</button>
+
+  <button class="secondary" onclick="loadDocuments()">Show All</button>
+
+  <div id="documents"></div>
+ </div>
+
 </section>
+
 </main>
 
 <script>
+
 let token = "";
 
-function message(text, error=false) {
+function message(text,error=false) {
  const box=document.getElementById("message");
+
  box.textContent=text;
+
  box.style.background=error?"#fee2e2":"#dcfce7";
  box.style.color=error?"#991b1b":"#166534";
+
  box.classList.remove("hidden");
 }
 
-async function api(url, options={}) {
+async function readResponse(response) {
+ const text=await response.text();
+
+ try {
+  return JSON.parse(text);
+ } catch {
+  return text;
+ }
+}
+
+async function api(url,options={}) {
+
  options.headers={
   ...(options.headers||{}),
   Authorization:"Bearer "+token
  };
+
  const response=await fetch(url,options);
- const data=await response.json().catch(()=>null);
- if(!response.ok) throw new Error(
-  typeof data==="string"?data:"Request failed: "+response.status
- );
+ const data=await readResponse(response);
+
+ if(!response.ok) {
+  const errorText=typeof data==="string"
+   ?data
+   :data?.message||JSON.stringify(data);
+
+  throw new Error(errorText||"Request failed: "+response.status);
+ }
+
  return data;
 }
 
 async function register() {
  try {
-  const result=await fetch("/api/Auth/register",{
+
+  const response=await fetch("/api/Auth/register",{
    method:"POST",
    headers:{"Content-Type":"application/json"},
+
    body:JSON.stringify({
     fullName:document.getElementById("name").value,
     email:document.getElementById("email").value,
     password:document.getElementById("password").value
    })
   });
-  const data=await result.json();
-  if(!result.ok) throw new Error(JSON.stringify(data));
+
+  const data=await readResponse(response);
+
+  if(!response.ok) {
+   throw new Error(
+    typeof data==="string"?data:JSON.stringify(data)
+   );
+  }
+
   message("Registration successful. Please login.");
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 async function login() {
  try {
+
   const response=await fetch("/api/Auth/login",{
    method:"POST",
    headers:{"Content-Type":"application/json"},
+
    body:JSON.stringify({
     email:document.getElementById("email").value,
     password:document.getElementById("password").value
    })
   });
-  const data=await response.json();
-  if(!response.ok) throw new Error("Login failed. Check email and password.");
+
+  const data=await readResponse(response);
+
+  if(!response.ok) {
+   throw new Error("Login failed. Check email and password.");
+  }
+
   token=data.token;
+
   document.getElementById("auth").classList.add("hidden");
   document.getElementById("dashboard").classList.remove("hidden");
+
   message("Login successful.");
+
   await loadDocuments();
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 async function upload() {
  try {
+
   const file=document.getElementById("pdf").files[0];
-  if(!file) throw new Error("Select a PDF first.");
+
+  if(!file) {
+   throw new Error("Select a PDF first.");
+  }
+
   const form=new FormData();
   form.append("file",file);
-  await api("/api/Documents/upload",{method:"POST",body:form});
+
+  await api("/api/Documents/upload",{
+   method:"POST",
+   body:form
+  });
+
   document.getElementById("pdf").value="";
+
   message("Document uploaded successfully.");
+
   await loadDocuments();
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 async function loadDocuments() {
  try {
+
   const docs=await api("/api/Documents");
+
   showDocuments(docs);
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 async function searchDocuments() {
  try {
-  const q=encodeURIComponent(document.getElementById("search").value);
+
+  const q=encodeURIComponent(
+   document.getElementById("search").value
+  );
+
   const docs=await api("/api/Documents/search?query="+q);
+
   showDocuments(docs);
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 function showDocuments(docs) {
+
  const area=document.getElementById("documents");
+
  area.innerHTML="";
- if(!Array.isArray(docs)||docs.length===0){
+
+ if(!Array.isArray(docs)||docs.length===0) {
   area.textContent="No documents found.";
   return;
  }
+
  docs.forEach(doc=>{
+
   const row=document.createElement("div");
   row.className="doc";
+
   const info=document.createElement("div");
+
   const title=document.createElement("strong");
   title.textContent=doc.fileName;
+
   const size=document.createElement("small");
   size.textContent=" ("+doc.fileSize+" bytes)";
+
   info.append(title,size);
 
   const actions=document.createElement("div");
+
   const download=document.createElement("button");
   download.textContent="Download";
   download.onclick=()=>downloadDocument(doc.id,doc.fileName);
 
-  const del=document.createElement("button");
-  del.textContent="Delete";
-  del.className="danger";
-  del.onclick=()=>deleteDocument(doc.id);
+  actions.append(download);
 
-  actions.append(download,del);
+  if(doc.isOwner) {
+
+   const share=document.createElement("button");
+   share.textContent="Share";
+   share.onclick=()=>shareDocument(doc.id);
+
+   const del=document.createElement("button");
+   del.textContent="Delete";
+   del.className="danger";
+   del.onclick=()=>deleteDocument(doc.id);
+
+   actions.append(share,del);
+  }
+
   row.append(info,actions);
   area.append(row);
+
+  if(doc.isOwner && Array.isArray(doc.sharedWith)) {
+
+   doc.sharedWith.forEach(person=>{
+
+    const sharedRow=document.createElement("div");
+    sharedRow.className="doc";
+
+    const sharedInfo=document.createElement("small");
+
+    sharedInfo.textContent=
+     "Shared with: "+person.email+
+     " ("+person.permission+")";
+
+    const revoke=document.createElement("button");
+    revoke.textContent="Revoke";
+    revoke.className="danger";
+
+    revoke.onclick=()=>revokeShare(
+     doc.id,
+     person.userId
+    );
+
+    sharedRow.append(sharedInfo,revoke);
+    area.append(sharedRow);
+
+   });
+  }
+
  });
 }
 
-async function downloadDocument(id,name) {
+async function shareDocument(id) {
+
+ const email=prompt("Enter the registered user's email:");
+
+ if(!email) return;
+
+ const permission=prompt(
+  "Enter permission: Read or Edit",
+  "Read"
+ );
+
+ if(!permission) return;
+
+ if(!["read","edit"].includes(permission.trim().toLowerCase())) {
+  message("Permission must be Read or Edit.",true);
+  return;
+ }
+
  try {
-  const response=await fetch("/api/Documents/"+id+"/download",{
-   headers:{Authorization:"Bearer "+token}
-  });
-  if(!response.ok) throw new Error("Download failed: "+response.status);
+
+  const response=await fetch(
+   "/api/Documents/"+id+"/share",
+   {
+    method:"POST",
+
+    headers:{
+     "Authorization":"Bearer "+token,
+     "Content-Type":"application/json"
+    },
+
+    body:JSON.stringify({
+     email:email.trim(),
+     permission:permission.trim()
+    })
+   }
+  );
+
+  const data=await readResponse(response);
+
+  if(!response.ok) {
+   throw new Error(
+    typeof data==="string"?data:data?.message||"Sharing failed."
+   );
+  }
+
+  message(data.message||"Document shared successfully.");
+
+  await loadDocuments();
+
+ } catch(e) {
+  message(e.message,true);
+ }
+}
+
+async function revokeShare(id,userId) {
+
+ if(!confirm("Revoke this user's access?")) return;
+
+ try {
+
+  const response=await fetch(
+   "/api/Documents/"+id+"/share/"+encodeURIComponent(userId),
+   {
+    method:"DELETE",
+    headers:{
+     Authorization:"Bearer "+token
+    }
+   }
+  );
+
+  const data=await readResponse(response);
+
+  if(!response.ok) {
+   throw new Error(
+    typeof data==="string"?data:data?.message||"Revoke failed."
+   );
+  }
+
+  message(data.message||"Access revoked.");
+
+  await loadDocuments();
+
+ } catch(e) {
+  message(e.message,true);
+ }
+}
+
+async function downloadDocument(id,name) {
+
+ try {
+
+  const response=await fetch(
+   "/api/Documents/"+id+"/download",
+   {
+    headers:{
+     Authorization:"Bearer "+token
+    }
+   }
+  );
+
+  if(!response.ok) {
+   throw new Error("Download failed: "+response.status);
+  }
+
   const blob=await response.blob();
+
   const url=URL.createObjectURL(blob);
+
   const a=document.createElement("a");
   a.href=url;
   a.download=name;
   a.click();
+
   URL.revokeObjectURL(url);
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 async function deleteDocument(id) {
+
  if(!confirm("Delete this document?")) return;
+
  try {
-  await api("/api/Documents/"+id,{method:"DELETE"});
+
+  await api("/api/Documents/"+id,{
+   method:"DELETE"
+  });
+
   message("Document deleted.");
+
   await loadDocuments();
- } catch(e){message(e.message,true)}
+
+ } catch(e) {
+  message(e.message,true);
+ }
 }
 
 function logout() {
+
  token="";
+
  document.getElementById("dashboard").classList.add("hidden");
  document.getElementById("auth").classList.remove("hidden");
+
  document.getElementById("password").value="";
+
  message("Logged out.");
 }
+
 </script>
+
 </body>
 </html>

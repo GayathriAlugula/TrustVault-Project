@@ -15,4 +15,15 @@ public class Document
     public DateTime UploadedAt { get; set; } = DateTime.UtcNow;
 
     public string OwnerId { get; set; } = string.Empty;
+
+    public List<DocumentShare> SharedWith { get; set; } = new();
+}
+
+public class DocumentShare
+{
+    public string UserId { get; set; } = string.Empty;
+
+    public string Email { get; set; } = string.Empty;
+
+    public string Permission { get; set; } = "Read";
 }
