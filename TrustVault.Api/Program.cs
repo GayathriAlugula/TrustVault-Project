@@ -1,3 +1,4 @@
+
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -45,7 +46,7 @@ builder.Services.AddAuthorization();
 
 var app = builder.Build();
 
-// Apply migrations and create required roles
+// Apply migrations, create roles and assign Admin role
 using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
@@ -54,6 +55,9 @@ using (var scope = app.Services.CreateScope())
     var roleManager = scope.ServiceProvider
         .GetRequiredService<RoleManager<IdentityRole>>();
 
+    var userManager = scope.ServiceProvider
+        .GetRequiredService<UserManager<AppUser>>();
+
     string[] roles = { "Admin", "Owner", "Viewer" };
 
     foreach (var role in roles)
@@ -61,6 +65,27 @@ using (var scope = app.Services.CreateScope())
         if (!await roleManager.RoleExistsAsync(role))
         {
             await roleManager.CreateAsync(new IdentityRole(role));
+        }
+    }
+
+    var adminEmail = builder.Configuration["Admin:Email"];
+
+    if (!string.IsNullOrWhiteSpace(adminEmail))
+    {
+        var adminUser = await userManager.FindByEmailAsync(adminEmail);
+
+        if (adminUser != null &&
+            !await userManager.IsInRoleAsync(adminUser, "Admin"))
+        {
+            var result = await userManager.AddToRoleAsync(adminUser, "Admin");
+
+            if (!result.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    "Failed to assign Admin role: " +
+                    string.Join(", ", result.Errors.Select(e => e.Description))
+                );
+            }
         }
     }
 }
