@@ -43,8 +43,8 @@ public class AuthController : ControllerBase
 
         var user = new AppUser
         {
-            UserName = request.Email,
-            Email = request.Email,
+            UserName = request.Email.Trim(),
+            Email = request.Email.Trim(),
             FullName = request.FullName
         };
 
@@ -56,7 +56,10 @@ public class AuthController : ControllerBase
         if (!await _roleManager.RoleExistsAsync("Viewer"))
             await _roleManager.CreateAsync(new IdentityRole("Viewer"));
 
-        await _userManager.AddToRoleAsync(user, "Viewer");
+        var roleResult = await _userManager.AddToRoleAsync(user, "Viewer");
+
+        if (!roleResult.Succeeded)
+            return BadRequest(roleResult.Errors.Select(e => e.Description));
 
         return Ok(new
         {
@@ -69,13 +72,29 @@ public class AuthController : ControllerBase
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequest request)
     {
-        var user = await _userManager.FindByEmailAsync(request.Email);
-
-        if (user == null ||
-            !await _userManager.CheckPasswordAsync(user, request.Password))
+        if (string.IsNullOrWhiteSpace(request.Email) ||
+            string.IsNullOrWhiteSpace(request.Password))
         {
-            return Unauthorized("Invalid email or password.");
+            return BadRequest("Email and password are required.");
         }
+
+        var email = request.Email.Trim();
+        var user = await _userManager.FindByEmailAsync(email);
+
+        Console.WriteLine($"LOGIN DEBUG: User found = {user != null}");
+
+        if (user == null)
+            return Unauthorized("Invalid email or password.");
+
+        var passwordValid = await _userManager.CheckPasswordAsync(
+            user,
+            request.Password
+        );
+
+        Console.WriteLine($"LOGIN DEBUG: Password valid = {passwordValid}");
+
+        if (!passwordValid)
+            return Unauthorized("Invalid email or password.");
 
         var roles = await _userManager.GetRolesAsync(user);
 
@@ -90,8 +109,13 @@ public class AuthController : ControllerBase
             claims.Add(new Claim("role", role));
         }
 
+        var jwtKey = _configuration["Jwt:Key"];
+
+        if (string.IsNullOrWhiteSpace(jwtKey))
+            return StatusCode(500, "JWT configuration is missing.");
+
         var key = new SymmetricSecurityKey(
-            Convert.FromBase64String(_configuration["Jwt:Key"]!)
+            Convert.FromBase64String(jwtKey)
         );
 
         var credentials = new SigningCredentials(
