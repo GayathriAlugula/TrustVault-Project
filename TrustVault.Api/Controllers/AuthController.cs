@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
-using System.Text;
 using TrustVault.Api.Models;
 
 namespace TrustVault.Api.Controllers;
@@ -33,7 +32,9 @@ public class AuthController : ControllerBase
         if (string.IsNullOrWhiteSpace(request.FullName) ||
             string.IsNullOrWhiteSpace(request.Email) ||
             string.IsNullOrWhiteSpace(request.Password))
+        {
             return BadRequest("All fields are required.");
+        }
 
         var existingUser = await _userManager.FindByEmailAsync(request.Email);
 
@@ -72,7 +73,9 @@ public class AuthController : ControllerBase
 
         if (user == null ||
             !await _userManager.CheckPasswordAsync(user, request.Password))
+        {
             return Unauthorized("Invalid email or password.");
+        }
 
         var roles = await _userManager.GetRolesAsync(user);
 
@@ -83,12 +86,12 @@ public class AuthController : ControllerBase
         };
 
         foreach (var role in roles)
-            claims.Add(new Claim(ClaimTypes.Role, role));
+        {
+            claims.Add(new Claim("role", role));
+        }
 
         var key = new SymmetricSecurityKey(
-            Convert.FromBase64String(
-                _configuration["Jwt:Key"]!
-            )
+            Convert.FromBase64String(_configuration["Jwt:Key"]!)
         );
 
         var credentials = new SigningCredentials(
