@@ -10,4 +10,6 @@ public class AppDbContext : IdentityDbContext<AppUser>
         : base(options)
     {
     }
+
+    public DbSet<AuditLog> AuditLogs { get; set; }
 }
