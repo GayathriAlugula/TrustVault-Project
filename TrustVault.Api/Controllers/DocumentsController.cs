@@ -4,7 +4,9 @@ using System.Text.Json;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using TrustVault.Api.Models;
+using TrustVault.Api.Data;
 
 namespace TrustVault.Api.Controllers;
 
@@ -16,6 +18,7 @@ public class DocumentsController : ControllerBase
     private readonly string _uploadPath;
     private readonly string _dataPath;
     private readonly UserManager<AppUser> _userManager;
+    private readonly AppDbContext _db;
 
     private static readonly SemaphoreSlim FileLock = new(1, 1);
 
@@ -24,9 +27,12 @@ public class DocumentsController : ControllerBase
 
     public DocumentsController(
         IWebHostEnvironment environment,
-        UserManager<AppUser> userManager)
+        UserManager<AppUser> userManager,
+        AppDbContext db)
     {
         _userManager = userManager;
+        _db = db;
+
         _uploadPath = Path.Combine(environment.ContentRootPath, "Uploads");
         _dataPath = Path.Combine(environment.ContentRootPath, "Data", "documents.json");
 
@@ -36,6 +42,27 @@ public class DocumentsController : ControllerBase
 
     private string? CurrentUserId =>
         User.FindFirstValue(ClaimTypes.NameIdentifier);
+
+    private async Task LogAsync(
+        string userId,
+        Guid documentId,
+        string action,
+        string status,
+        string details = "")
+    {
+        var log = new AuditLog
+        {
+            UserId = userId,
+            DocumentId = documentId,
+            Action = action,
+            Status = status,
+            Timestamp = DateTime.UtcNow,
+            Details = details
+        };
+
+        _db.AuditLogs.Add(log);
+        await _db.SaveChangesAsync();
+    }
 
     private async Task<List<Document>> ReadDocumentsAsync()
     {
@@ -135,6 +162,8 @@ public class DocumentsController : ControllerBase
                 FileLock.Release();
             }
 
+            await LogAsync(ownerId, id, "Upload", "Success", document.FileName);
+
             return Ok(new
             {
                 message = "Document uploaded successfully.",
@@ -168,7 +197,10 @@ public class DocumentsController : ControllerBase
             var results = documents
                 .Where(d => d.OwnerId == userId ||
                     (d.SharedWith?.Any(s => s.UserId == userId) ?? false))
-                .Select(d => MapDocument(d, userId));
+                .Select(d => MapDocument(d, userId))
+                .ToList();
+
+            await LogAsync(userId, Guid.Empty, "ListDocuments", "Success");
 
             return Ok(results);
         }
@@ -197,7 +229,10 @@ public class DocumentsController : ControllerBase
                      (d.SharedWith?.Any(s => s.UserId == userId) ?? false)) &&
                     d.FileName.Contains(
                         query ?? "", StringComparison.OrdinalIgnoreCase))
-                .Select(d => MapDocument(d, userId));
+                .Select(d => MapDocument(d, userId))
+                .ToList();
+
+            await LogAsync(userId, Guid.Empty, "Search", "Success", query ?? "");
 
             return Ok(results);
         }
@@ -273,6 +308,10 @@ public class DocumentsController : ControllerBase
 
             await SaveDocumentsAsync(documents);
 
+            await LogAsync(
+                ownerId, id, "Share", "Success",
+                $"Shared with {targetUser.Email}, Permission: {permission}");
+
             return Ok(new
             {
                 message = "Document shared successfully.",
@@ -317,6 +356,10 @@ public class DocumentsController : ControllerBase
 
             await SaveDocumentsAsync(documents);
 
+            await LogAsync(
+                ownerId, id, "Revoke", "Success",
+                $"Access revoked for {share.Email}");
+
             return Ok(new { message = "Access revoked successfully." });
         }
         finally
@@ -354,12 +397,22 @@ public class DocumentsController : ControllerBase
         }
 
         if (document == null)
+        {
+            await LogAsync(userId, id, "Download", "Denied",
+                "Document not found or access denied.");
+
             return NotFound("Document not found or access denied.");
+        }
 
         var path = Path.Combine(_uploadPath, document.StoredFileName);
 
         if (!System.IO.File.Exists(path))
+        {
+            await LogAsync(userId, id, "Download", "Failed", "File not found.");
             return NotFound("File not found.");
+        }
+
+        await LogAsync(userId, id, "Download", "Success", document.FileName);
 
         return PhysicalFile(path, document.ContentType, document.FileName);
     }
@@ -390,6 +443,8 @@ public class DocumentsController : ControllerBase
 
             if (System.IO.File.Exists(path))
                 System.IO.File.Delete(path);
+
+            await LogAsync(userId, id, "Delete", "Success", document.FileName);
 
             return Ok(new { message = "Document deleted successfully." });
         }
