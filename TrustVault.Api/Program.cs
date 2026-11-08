@@ -64,27 +64,55 @@ using (var scope = app.Services.CreateScope())
     {
         if (!await roleManager.RoleExistsAsync(role))
         {
-            await roleManager.CreateAsync(new IdentityRole(role));
+            var roleResult = await roleManager.CreateAsync(
+                new IdentityRole(role)
+            );
+
+            if (!roleResult.Succeeded)
+            {
+                throw new InvalidOperationException(
+                    string.Join(", ", roleResult.Errors.Select(e => e.Description))
+                );
+            }
         }
     }
 
-    var adminEmail = builder.Configuration["Admin:Email"];
+    var adminEmail = builder.Configuration["Admin:Email"]?.Trim();
+
+    Console.WriteLine("ADMIN DEBUG: Config present = " +
+        !string.IsNullOrWhiteSpace(adminEmail));
 
     if (!string.IsNullOrWhiteSpace(adminEmail))
     {
         var adminUser = await userManager.FindByEmailAsync(adminEmail);
 
-        if (adminUser != null &&
-            !await userManager.IsInRoleAsync(adminUser, "Admin"))
-        {
-            var result = await userManager.AddToRoleAsync(adminUser, "Admin");
+        Console.WriteLine("ADMIN DEBUG: User found = " +
+            (adminUser != null));
 
-            if (!result.Succeeded)
+        if (adminUser != null)
+        {
+            var currentRoles = await userManager.GetRolesAsync(adminUser);
+
+            Console.WriteLine("ADMIN DEBUG: Current roles = " +
+                string.Join(", ", currentRoles));
+
+            if (!currentRoles.Contains("Admin"))
             {
-                throw new InvalidOperationException(
-                    "Failed to assign Admin role: " +
-                    string.Join(", ", result.Errors.Select(e => e.Description))
+                var result = await userManager.AddToRoleAsync(
+                    adminUser,
+                    "Admin"
                 );
+
+                Console.WriteLine("ADMIN DEBUG: Assignment successful = " +
+                    result.Succeeded);
+
+                if (!result.Succeeded)
+                {
+                    throw new InvalidOperationException(
+                        "Admin assignment failed: " +
+                        string.Join(", ", result.Errors.Select(e => e.Description))
+                    );
+                }
             }
         }
     }
