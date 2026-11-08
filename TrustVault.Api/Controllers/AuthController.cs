@@ -96,6 +96,35 @@ public class AuthController : ControllerBase
         if (!passwordValid)
             return Unauthorized("Invalid email or password.");
 
+        // Assign Admin only to the configured Admin email
+        var adminEmail = _configuration["Admin:Email"]?.Trim();
+
+        if (!string.IsNullOrWhiteSpace(adminEmail) &&
+            string.Equals(
+                user.Email?.Trim(),
+                adminEmail,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            if (!await _roleManager.RoleExistsAsync("Admin"))
+            {
+                var roleResult = await _roleManager.CreateAsync(
+                    new IdentityRole("Admin")
+                );
+
+                if (!roleResult.Succeeded)
+                    return StatusCode(500, "Could not create Admin role.");
+            }
+
+            if (!await _userManager.IsInRoleAsync(user, "Admin"))
+            {
+                var result = await _userManager.AddToRoleAsync(user, "Admin");
+
+                if (!result.Succeeded)
+                    return StatusCode(500, "Could not assign Admin role.");
+            }
+        }
+
+        // Fetch roles after assigning Admin
         var roles = await _userManager.GetRolesAsync(user);
 
         var claims = new List<Claim>
@@ -123,9 +152,11 @@ public class AuthController : ControllerBase
             SecurityAlgorithms.HmacSha256
         );
 
+        var expiry = DateTime.UtcNow.AddHours(1);
+
         var token = new JwtSecurityToken(
             claims: claims,
-            expires: DateTime.UtcNow.AddHours(1),
+            expires: expiry,
             signingCredentials: credentials
         );
 
@@ -133,7 +164,7 @@ public class AuthController : ControllerBase
         {
             message = "Login successful.",
             token = new JwtSecurityTokenHandler().WriteToken(token),
-            expiresAt = DateTime.UtcNow.AddHours(1)
+            expiresAt = expiry
         });
     }
 }
